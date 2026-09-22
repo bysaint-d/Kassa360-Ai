@@ -328,12 +328,12 @@ export const calculateKassaReport = (
   };
 
   // 1. Filter sales in range
-  const periodSales = sales.filter((s) => isInRange(s.date));
+  const periodSales = (sales || []).filter((s) => s && s.date && isInRange(s.date));
   const activeSales = periodSales.filter((s) => !s.isReturned);
   const returnedSales = periodSales.filter((s) => s.isReturned);
 
   // Ümumi Satış (gross sales revenue of unreturned receipts)
-  const grossSales = roundMoney(activeSales.reduce((acc, s) => acc + s.total, 0));
+  const grossSales = roundMoney(activeSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0));
   const salesCount = activeSales.length;
 
   // Real cash collected from sales
@@ -341,13 +341,16 @@ export const calculateKassaReport = (
   let cardSales = 0;
 
   activeSales.forEach((s) => {
+    const saleTotal = Number(s.total) || 0;
+    const paid = Number(s.paidAmount !== undefined ? s.paidAmount : saleTotal) || 0;
+
     if (s.paymentMethod === 'Nağd') {
-      cashSales += s.paidAmount || s.total;
+      cashSales += paid;
     } else if (s.paymentMethod === 'Kart') {
-      cardSales += s.paidAmount || s.total;
+      cardSales += paid;
     } else if (s.paymentMethod === 'Borc') {
       // For credit sales, count initial payment made at the time of sale
-      const initialPaid = s.initialPaidAmount || 0;
+      const initialPaid = Number(s.initialPaidAmount) || 0;
       if (initialPaid > 0) {
         if (s.partialPaymentMethod === 'Kart') {
           cardSales += initialPaid;
@@ -359,18 +362,19 @@ export const calculateKassaReport = (
   });
 
   // Subsequent Debt Payments collected in this period
-  sales.forEach((s) => {
-    if (s.debtPayments && s.debtPayments.length > 0) {
+  (sales || []).forEach((s) => {
+    if (s && s.debtPayments && s.debtPayments.length > 0) {
       s.debtPayments.forEach((dp) => {
-        if (isInRange(dp.date)) {
+        if (dp && dp.date && isInRange(dp.date)) {
           // If this was an initial payment already accounted for during sale, skip to avoid double counting
-          if (dp.notes?.includes('İlkin ödəniş') && isInRange(s.date)) {
+          if (dp.notes?.includes('İlkin ödəniş') && s.date && isInRange(s.date)) {
             return;
           }
+          const dpAmt = Number(dp.amount) || 0;
           if (dp.paymentMethod === 'Kart') {
-            cardSales += dp.amount;
+            cardSales += dpAmt;
           } else {
-            cashSales += dp.amount;
+            cashSales += dpAmt;
           }
         }
       });
@@ -382,19 +386,19 @@ export const calculateKassaReport = (
   const totalSalesCollected = roundMoney(cashSales + cardSales);
 
   // Kassaya əlavə edilən pul (Mədaxil)
-  const periodIncomes = incomes.filter((i) => isInRange(i.date));
+  const periodIncomes = (incomes || []).filter((i) => i && i.date && isInRange(i.date));
   let cashIn = 0;
   periodIncomes.forEach((inc) => {
     // Only count true cash additions / deposits (ignore any legacy duplicate 'Satış' entries)
     if (inc.category !== 'Satış' && inc.category !== 'Qaytarma' && inc.category !== 'Borc Ödənişi') {
-      cashIn += inc.amount;
+      cashIn += Number(inc.amount) || 0;
     }
   });
   cashIn = roundMoney(cashIn);
   const totalInflow = roundMoney(totalSalesCollected + cashIn);
 
   // Xərclər və Kassadan Çıxarılan Pul (Məxaric)
-  const periodExpenses = expenses.filter((e) => isInRange(e.date));
+  const periodExpenses = (expenses || []).filter((e) => e && e.date && isInRange(e.date));
   let generalExpenses = 0;
   let cashExpenses = 0;
   let cardExpenses = 0;
@@ -405,14 +409,15 @@ export const calculateKassaReport = (
       e.category === 'Kassadan Məxaric' ||
       e.category === 'İnkasasiya' ||
       e.category === 'Kassadan Çıxarış';
+    const amt = Number(e.amount) || 0;
     if (isCashOut) {
-      cashOut += e.amount;
+      cashOut += amt;
     } else {
-      generalExpenses += e.amount;
+      generalExpenses += amt;
       if (e.paymentMethod === 'Kart') {
-        cardExpenses += e.amount;
+        cardExpenses += amt;
       } else {
-        cashExpenses += e.amount;
+        cashExpenses += amt;
       }
     }
   });
@@ -426,7 +431,7 @@ export const calculateKassaReport = (
   let cashRefunds = 0;
   let cardRefunds = 0;
   returnedSales.forEach((s) => {
-    const refundAmt = s.paymentMethod === 'Borc' ? (s.paidAmount || s.initialPaidAmount || 0) : s.total;
+    const refundAmt = s.paymentMethod === 'Borc' ? (Number(s.paidAmount || s.initialPaidAmount) || 0) : (Number(s.total) || 0);
     if (s.paymentMethod === 'Kart') {
       cardRefunds += refundAmt;
     } else {

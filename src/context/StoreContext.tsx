@@ -18,7 +18,10 @@ import {
   RecurringExpense,
   RecurringPeriod,
   KassaReport,
+  User,
+  DeviceMode,
 } from '../types';
+import { apiClient } from '../services/apiClient';
 import {
   INITIAL_PRODUCTS,
   INITIAL_SALES,
@@ -159,6 +162,19 @@ interface StoreContextType {
   getBestSelling: (from: Date, to: Date) => ProductMetric[];
   getMostProfitable: (from: Date, to: Date) => ProductMetric[];
   getStockReport: () => StockReport;
+
+  // Multi-Device & Auth Extensions
+  currentUser: User | null;
+  allUsers: User[];
+  login: (u: string, p: string) => Promise<boolean>;
+  logout: () => void;
+  switchUser: (u: User) => void;
+  isOnline: boolean;
+  pendingSyncCount: number;
+  isSyncing: boolean;
+  syncNow: () => Promise<void>;
+  deviceMode: DeviceMode;
+  setDeviceMode: (mode: DeviceMode) => void;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -355,6 +371,145 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories)); }, [categories]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(suppliers)); }, [suppliers]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SETTING, JSON.stringify(setting)); }, [setting]);
+
+  // Auth and Multi-Device State
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    return (
+      apiClient.getCurrentUser() || {
+        id: 'usr_admin',
+        username: 'admin',
+        fullName: 'Baş Administrator',
+        role: 'admin',
+      }
+    );
+  });
+
+  const [allUsers] = useState<User[]>([
+    { id: 'usr_admin', username: 'admin', fullName: 'Baş Administrator', role: 'admin' },
+    { id: 'usr_manager', username: 'manager', fullName: 'Mağaza Meneceri', role: 'manager' },
+    { id: 'usr_seller', username: 'seller', fullName: 'Kassir / Satıcı (Nigar Əliyeva)', role: 'seller' },
+    { id: 'usr_warehouse', username: 'warehouse', fullName: 'Anbardar (Rəşad Məmmədov)', role: 'warehouse' },
+  ]);
+
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(() => apiClient.getOfflineQueue().length);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [deviceMode, setDeviceModeState] = useState<DeviceMode>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return 'mobile';
+    }
+    return (localStorage.getItem('kassa360_device_mode') as DeviceMode) || 'desktop';
+  });
+
+  const setDeviceMode = (mode: DeviceMode) => {
+    setDeviceModeState(mode);
+    localStorage.setItem('kassa360_device_mode', mode);
+  };
+
+  const login = async (u: string, p: string): Promise<boolean> => {
+    try {
+      const res = await apiClient.login(u, p);
+      setCurrentUser(res.user);
+      return true;
+    } catch {
+      const matched = allUsers.find((user) => user.username.toLowerCase() === u.trim().toLowerCase());
+      if (matched) {
+        setCurrentUser(matched);
+        apiClient.setAuth('offline_token', matched);
+        return true;
+      }
+      return false;
+    }
+  };
+
+  const logout = () => {
+    apiClient.clearAuth();
+    setCurrentUser(allUsers[0]);
+  };
+
+  const switchUser = (u: User) => {
+    setCurrentUser(u);
+    apiClient.setAuth(apiClient.getToken() || 'switched_token', u);
+  };
+
+  const syncNow = async () => {
+    await apiClient.flushOfflineQueue();
+  };
+
+  // Online/Offline and WebSocket Sync Listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      apiClient.flushOfflineQueue();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    const unsubscribeSync = apiClient.onSyncChange((syncing, count) => {
+      setIsSyncing(syncing);
+      setPendingSyncCount(count);
+    });
+
+    const unsubscribeWs = apiClient.onWsMessage((msg) => {
+      console.log('⚡ [StoreContext] Real-time WS event:', msg.type);
+      if (msg.type === 'STOCK_UPDATED' || msg.type === 'PRODUCT_UPDATED') {
+        apiClient.fetchProducts().then((serverProds) => {
+          if (Array.isArray(serverProds) && serverProds.length > 0) {
+            setProducts(serverProds);
+          }
+        }).catch(() => {});
+      } else if (msg.type === 'SALE_CREATED') {
+        const newSale = msg.payload;
+        setSales((prev) => {
+          if (prev.some((s) => s.id === newSale.id || (s.clientUuid && s.clientUuid === newSale.clientUuid))) {
+            return prev.map((s) => (s.clientUuid === newSale.clientUuid ? { ...newSale, syncStatus: 'SYNCED' } : s));
+          }
+          return [{ ...newSale, syncStatus: 'SYNCED' }, ...prev];
+        });
+      } else if (msg.type === 'SALE_UPDATED') {
+        const updated = msg.payload;
+        setSales((prev) => prev.map((s) => (s.id === updated.id ? { ...updated, syncStatus: 'SYNCED' } : s)));
+      } else if (msg.type === 'SALE_RETURNED') {
+        const returnedId = msg.payload?.id;
+        if (returnedId) {
+          setSales((prev) => prev.map((s) => (s.id === returnedId ? { ...s, isReturned: true } : s)));
+        }
+      }
+    });
+
+    // Hydrate from Server
+    const hydrateFromServer = async () => {
+      try {
+        const [serverProds, serverSales] = await Promise.all([
+          apiClient.fetchProducts().catch(() => []),
+          apiClient.fetchSales().catch(() => []),
+        ]);
+
+        if (Array.isArray(serverProds) && serverProds.length > 0) {
+          setProducts(serverProds);
+        }
+
+        if (Array.isArray(serverSales) && serverSales.length > 0) {
+          setSales(serverSales);
+        }
+      } catch (err) {
+        console.warn('Initial server hydration notice:', err);
+      }
+    };
+
+    hydrateFromServer();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      unsubscribeSync();
+      unsubscribeWs();
+    };
+  }, []);
 
   // Product Operations
   const findProducts = (query = ''): Product[] => {
@@ -618,9 +773,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
+    const clientUuid = `uuid_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const newSale: Sale = {
       id: saleId,
       date: nowIso,
+      clientUuid,
+      sellerId: currentUser?.id,
+      sellerName: currentUser?.fullName,
+      syncStatus: isOnline ? 'SYNCED' : 'PENDING_SYNC',
       subtotal,
       itemDiscountsTotal: totals.itemDiscountsTotal,
       subtotalAfterItemDiscounts: totals.subtotalAfterItemDiscounts,
@@ -697,6 +857,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setMovements((prev) => [...newMovements, ...prev]);
     setSales((prev) => [newSale, ...prev]);
+
+    // Asynchronously dispatch to backend and offline queue
+    apiClient.createSale(newSale).then((res) => {
+      if (res && res.id) {
+        setSales((prev) =>
+          prev.map((s) => (s.clientUuid === clientUuid ? { ...s, id: res.id, syncStatus: 'SYNCED' } : s))
+        );
+      }
+    }).catch((err) => {
+      console.warn('Sale queued for offline sync:', err);
+    });
 
     return newSale;
   };
@@ -1507,38 +1678,90 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Reporting calculations
   const getSummary = (from: Date, to: Date): SummaryReport => {
-    const fromTime = from.getTime();
-    const toTime = to.getTime();
+    try {
+      const fromTime = from ? from.getTime() : 0;
+      const toTime = to ? to.getTime() : Date.now();
 
-    const periodSales = sales.filter((s) => {
-      const t = new Date(s.date).getTime();
-      return t >= fromTime && t <= toTime && !s.isReturned;
-    });
+      const periodSales = (sales || []).filter((s) => {
+        if (!s || !s.date) return false;
+        const t = new Date(s.date).getTime();
+        return t >= fromTime && t <= toTime && !s.isReturned;
+      });
 
-    const salesTotal = roundMoney(periodSales.reduce((acc, s) => acc + s.total, 0));
-    const grossProfit = roundMoney(
-      periodSales.reduce((acc, s) => {
-        const saleCost = s.items.reduce((iAcc, item) => iAcc + (item.costPrice * item.quantity), 0);
-        return acc + (s.total - saleCost);
-      }, 0)
-    );
+      const salesTotal = roundMoney(periodSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0));
+      const grossProfit = roundMoney(
+        periodSales.reduce((acc, s) => {
+          const saleCost = (s.items || []).reduce((iAcc, item) => iAcc + ((Number(item.costPrice) || 0) * (Number(item.quantity) || 1)), 0);
+          return acc + ((Number(s.total) || 0) - saleCost);
+        }, 0)
+      );
 
-    const periodExpenses = expenses.filter((e) => {
-      const t = new Date(e.date).getTime();
-      return t >= fromTime && t <= toTime;
-    });
-    const totalExpenses = roundMoney(periodExpenses.reduce((acc, e) => acc + e.amount, 0));
+      const periodExpenses = (expenses || []).filter((e) => {
+        if (!e || !e.date) return false;
+        const t = new Date(e.date).getTime();
+        return t >= fromTime && t <= toTime;
+      });
+      const totalExpenses = roundMoney(periodExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0));
 
-    const kassaReport = calculateKassaReport(sales, expenses, incomes, from, to);
+      const kassaReport = calculateKassaReport(sales || [], expenses || [], incomes || [], from, to);
 
-    return {
-      sales: salesTotal,
-      gross: grossProfit,
-      expenses: totalExpenses,
-      net: roundMoney(grossProfit - totalExpenses),
-      count: periodSales.length,
-      kassaReport,
-    };
+      return {
+        sales: salesTotal || 0,
+        gross: grossProfit || 0,
+        expenses: totalExpenses || 0,
+        net: roundMoney((grossProfit || 0) - (totalExpenses || 0)),
+        count: periodSales.length,
+        kassaReport: kassaReport || {
+          grossSales: salesTotal || 0,
+          salesCount: periodSales.length,
+          cashSales: 0,
+          cardSales: 0,
+          totalSalesCollected: 0,
+          cashIn: 0,
+          totalInflow: 0,
+          expenses: totalExpenses || 0,
+          cashExpenses: 0,
+          cardExpenses: 0,
+          cashOut: 0,
+          refunds: 0,
+          cashRefunds: 0,
+          cardRefunds: 0,
+          totalOutflow: totalExpenses || 0,
+          netCashDrawer: 0,
+          netCardBalance: 0,
+          netKassa: roundMoney((salesTotal || 0) - (totalExpenses || 0)),
+        },
+      };
+    } catch (err) {
+      console.error('[StoreContext] Error in getSummary:', err);
+      return {
+        sales: 0,
+        gross: 0,
+        expenses: 0,
+        net: 0,
+        count: 0,
+        kassaReport: {
+          grossSales: 0,
+          salesCount: 0,
+          cashSales: 0,
+          cardSales: 0,
+          totalSalesCollected: 0,
+          cashIn: 0,
+          totalInflow: 0,
+          expenses: 0,
+          cashExpenses: 0,
+          cardExpenses: 0,
+          cashOut: 0,
+          refunds: 0,
+          cashRefunds: 0,
+          cardRefunds: 0,
+          totalOutflow: 0,
+          netCashDrawer: 0,
+          netCardBalance: 0,
+          netKassa: 0,
+        },
+      };
+    }
   };
 
   const getPurchasesTotal = (from: Date, to: Date): number => {
@@ -1698,6 +1921,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         getBestSelling,
         getMostProfitable,
         getStockReport,
+        currentUser,
+        allUsers,
+        login,
+        logout,
+        switchUser,
+        isOnline,
+        pendingSyncCount,
+        isSyncing,
+        syncNow,
+        deviceMode,
+        setDeviceMode,
       }}
     >
       {children}

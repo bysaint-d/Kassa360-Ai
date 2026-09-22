@@ -82,9 +82,34 @@ export interface Sale {
   customerName?: string;
   notes?: string;
   isReturned: boolean;
+  clientUuid?: string;
+  deviceId?: string;
+  sellerId?: string;
+  sellerName?: string;
+  syncStatus?: 'SYNCED' | 'PENDING_SYNC';
   items: SaleItem[];
   debtPayments?: DebtPayment[];
 }
+
+export interface User {
+  id: string;
+  username: string;
+  fullName: string;
+  role: 'admin' | 'manager' | 'seller' | 'warehouse';
+}
+
+export interface OfflineOperation {
+  id: string;
+  clientUuid: string;
+  deviceId: string;
+  type: 'SALE_CREATE' | 'SALE_UPDATE' | 'SALE_RETURN';
+  payload: any;
+  createdAt: string;
+  status: 'PENDING_SYNC' | 'SYNCED' | 'FAILED';
+  errorMessage?: string;
+}
+
+export type DeviceMode = 'desktop' | 'mobile';
 
 export interface Purchase {
   id: number;

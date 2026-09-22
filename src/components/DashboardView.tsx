@@ -27,30 +27,56 @@ interface DashboardViewProps {
   onOpenNewProduct?: () => void;
 }
 
+// Defensive number formatter to prevent undefined.toFixed() runtime crashes
+const fmt = (val: number | undefined | null, decimals = 2): string => {
+  if (val === undefined || val === null || isNaN(Number(val))) {
+    return (0).toFixed(decimals);
+  }
+  return Number(val).toFixed(decimals);
+};
+
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenNewProduct }) => {
   const { products, sales, setting, getSummary } = useStore();
   const [showKassaBreakdown, setShowKassaBreakdown] = useState(true);
 
-  // Calculate Today's metrics
+  // Calculate Today's metrics safely
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const endOfDay = new Date(today);
   endOfDay.setHours(23, 59, 59, 999);
-  const todaySummary = getSummary(today, endOfDay);
-  const kassa = todaySummary.kassaReport;
+  
+  const todaySummary = getSummary ? getSummary(today, endOfDay) : null;
+  const kassa = todaySummary?.kassaReport || {
+    grossSales: 0,
+    salesCount: 0,
+    cashSales: 0,
+    cardSales: 0,
+    totalSalesCollected: 0,
+    cashIn: 0,
+    totalInflow: 0,
+    expenses: 0,
+    cashExpenses: 0,
+    cardExpenses: 0,
+    cashOut: 0,
+    refunds: 0,
+    cashRefunds: 0,
+    cardRefunds: 0,
+    totalOutflow: 0,
+    netCashDrawer: 0,
+    netCardBalance: 0,
+    netKassa: 0,
+  };
 
-  // Calculate Month's metrics
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthSummary = getSummary(startOfMonth, endOfDay);
-
-  // Critical products (Stock <= MinimumStock)
-  const criticalProducts = products
-    .filter((p) => p.stockQuantity <= p.minimumStock)
-    .sort((a, b) => a.stockQuantity - b.stockQuantity)
+  // Critical products (Stock <= MinimumStock) safely checked
+  const criticalProducts = (products || [])
+    .filter((p) => p && (Number(p.stockQuantity) || 0) <= (Number(p.minimumStock) || 0))
+    .sort((a, b) => (Number(a.stockQuantity) || 0) - (Number(b.stockQuantity) || 0))
     .slice(0, 10);
 
   // Recent 5 sales
-  const recentSales = sales.slice(0, 5);
+  const recentSales = (sales || []).slice(0, 5);
+
+  const currencySymbol = setting?.currency || '₼';
 
   return (
     <div className="space-y-6">
@@ -58,7 +84,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Xoş gəlmisiniz, {setting.storeName || 'Calvotti Market'}
+            Xoş gəlmisiniz, {setting?.storeName || 'Calvotti Market'}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             Geyim mağazası kassa idarəetməsi, real pul hərəkəti və anbar qalığı
@@ -96,14 +122,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-bold text-slate-900 tracking-tight">
-              {todaySummary.sales.toFixed(2)} {setting.currency}
+              {fmt(todaySummary?.sales)} {currencySymbol}
             </h3>
             <div className="text-xs text-slate-500 mt-1.5 flex items-center gap-2 flex-wrap">
-              <span className="text-slate-600 font-semibold">{todaySummary.count} çek</span>
+              <span className="text-slate-600 font-semibold">{todaySummary?.count ?? 0} çek</span>
               <span className="text-slate-300">•</span>
-              <span className="text-emerald-700 font-medium">Nağd: {kassa.cashSales.toFixed(2)} ₼</span>
+              <span className="text-emerald-700 font-medium">Nağd: {fmt(kassa.cashSales)} ₼</span>
               <span className="text-slate-300">•</span>
-              <span className="text-blue-700 font-medium">Kart: {kassa.cardSales.toFixed(2)} ₼</span>
+              <span className="text-blue-700 font-medium">Kart: {fmt(kassa.cardSales)} ₼</span>
             </div>
           </div>
         </div>
@@ -124,8 +150,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             </div>
           </div>
           <div className="mt-3">
-            <h3 className={`text-2xl font-bold tracking-tight ${kassa.netCashDrawer >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {kassa.netCashDrawer.toFixed(2)} {setting.currency}
+            <h3 className={`text-2xl font-bold tracking-tight ${(kassa.netCashDrawer ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {fmt(kassa.netCashDrawer)} {currencySymbol}
             </h3>
             <p className="text-xs text-slate-500 mt-1.5">
               Fiziki kassa yeşiyindəki real nağd pul
@@ -145,7 +171,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-bold text-indigo-700 tracking-tight">
-              {kassa.netCardBalance.toFixed(2)} {setting.currency}
+              {fmt(kassa.netCardBalance)} {currencySymbol}
             </h3>
             <p className="text-xs text-slate-500 mt-1.5">
               Bank hesabına köçürülən POS ödənişləri
@@ -165,10 +191,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-bold text-purple-700 tracking-tight">
-              {todaySummary.gross.toFixed(2)} {setting.currency}
+              {fmt(todaySummary?.gross)} {currencySymbol}
             </h3>
             <p className="text-xs text-slate-500 mt-1.5">
-              Xərclər çıxıldıqdan sonra: <span className="font-semibold text-slate-800">{todaySummary.net.toFixed(2)} {setting.currency}</span>
+              Xərclər çıxıldıqdan sonra: <span className="font-semibold text-slate-800">{fmt(todaySummary?.net)} {currencySymbol}</span>
             </p>
           </div>
         </div>
@@ -202,7 +228,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 space-y-1">
               <span className="text-slate-500 font-medium block">Nağd Satış:</span>
               <p className="font-extrabold text-emerald-700 text-sm">
-                +{kassa.cashSales.toFixed(2)} {setting.currency}
+                +{fmt(kassa.cashSales)} {currencySymbol}
               </p>
               <span className="text-[10px] text-slate-400">Kassaya gələn nağd</span>
             </div>
@@ -211,7 +237,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 space-y-1">
               <span className="text-slate-500 font-medium block">Kart Satış (POS):</span>
               <p className="font-extrabold text-blue-700 text-sm">
-                +{kassa.cardSales.toFixed(2)} {setting.currency}
+                +{fmt(kassa.cardSales)} {currencySymbol}
               </p>
               <span className="text-[10px] text-slate-400">Bank hesabına</span>
             </div>
@@ -220,7 +246,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 space-y-1">
               <span className="text-slate-500 font-medium block">Kassaya Mədaxil:</span>
               <p className="font-extrabold text-indigo-700 text-sm">
-                +{kassa.cashIn.toFixed(2)} {setting.currency}
+                +{fmt(kassa.cashIn)} {currencySymbol}
               </p>
               <span className="text-[10px] text-slate-400">Kassaya əlavə pul</span>
             </div>
@@ -229,25 +255,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 space-y-1">
               <span className="text-slate-500 font-medium block">Xərclər:</span>
               <p className="font-extrabold text-rose-700 text-sm">
-                -{kassa.expenses.toFixed(2)} {setting.currency}
+                -{fmt(kassa.expenses)} {currencySymbol}
               </p>
-              <span className="text-[10px] text-slate-400">Nağd: {kassa.cashExpenses.toFixed(2)} ₼</span>
+              <span className="text-[10px] text-slate-400">Nağd: {fmt(kassa.cashExpenses)} ₼</span>
             </div>
 
             {/* 5. Geri Qaytarmalar */}
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 space-y-1">
               <span className="text-slate-500 font-medium block">Geri Qaytarmalar:</span>
               <p className="font-extrabold text-amber-700 text-sm">
-                -{kassa.refunds.toFixed(2)} {setting.currency}
+                -{fmt(kassa.refunds)} {currencySymbol}
               </p>
-              <span className="text-[10px] text-slate-400">Nağd: {kassa.cashRefunds.toFixed(2)} ₼</span>
+              <span className="text-[10px] text-slate-400">Nağd: {fmt(kassa.cashRefunds)} ₼</span>
             </div>
 
             {/* 6. Kassadan Çıxarış (Məxaric) */}
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 space-y-1">
               <span className="text-slate-500 font-medium block">Kassadan Məxaric:</span>
               <p className="font-extrabold text-rose-800 text-sm">
-                -{kassa.cashOut.toFixed(2)} {setting.currency}
+                -{fmt(kassa.cashOut)} {currencySymbol}
               </p>
               <span className="text-[10px] text-slate-400">İnkasasiya / təhvil</span>
             </div>
@@ -266,7 +292,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             </div>
             <button
               onClick={() => onNavigate('Mallar')}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
             >
               Hamısına bax <ArrowRight className="w-3.5 h-3.5" />
             </button>
@@ -291,12 +317,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {criticalProducts.map((p) => {
-                    const isZero = p.stockQuantity <= 0;
+                    const stock = Number(p.stockQuantity) || 0;
+                    const minStock = Number(p.minimumStock) || 0;
+                    const isZero = stock <= 0;
                     return (
                       <tr key={p.id} className="hover:bg-slate-50/60 transition">
                         <td className="py-3 px-4">
-                          <p className="font-semibold text-slate-900">{p.name}</p>
-                          <p className="text-xs text-slate-400">{p.category}</p>
+                          <p className="font-semibold text-slate-900">{p.name || 'Adsız məhsul'}</p>
+                          <p className="text-xs text-slate-400">{p.category || 'Ümumi'}</p>
                         </td>
                         <td className="py-3 px-3 font-mono text-xs text-slate-500">
                           {p.barcode || '—'}
@@ -309,14 +337,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                                 : 'bg-amber-100 text-amber-800'
                             }`}
                           >
-                            {p.stockQuantity} ədəd
+                            {stock} ədəd
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center text-xs text-slate-400">
-                          {p.minimumStock} ədəd
+                          {minStock} ədəd
                         </td>
                         <td className="py-3 px-4 text-right font-semibold text-slate-800">
-                          {p.salePrice.toFixed(2)} {setting.currency}
+                          {fmt(p.salePrice)} {currencySymbol}
                         </td>
                       </tr>
                     );
@@ -335,7 +363,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => onNavigate('Satış')}
-                className="p-4 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-50 text-blue-700 text-left transition group"
+                className="p-4 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-50 text-blue-700 text-left transition group cursor-pointer"
               >
                 <ShoppingCart className="w-5 h-5 mb-2 text-blue-600 group-hover:scale-110 transition-transform" />
                 <p className="font-bold text-sm text-slate-900">Satış Terminalı</p>
@@ -347,7 +375,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                   onNavigate('Mallar');
                   if (onOpenNewProduct) onOpenNewProduct();
                 }}
-                className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 text-left transition group"
+                className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 text-left transition group cursor-pointer"
               >
                 <PlusCircle className="w-5 h-5 mb-2 text-emerald-600 group-hover:scale-110 transition-transform" />
                 <p className="font-bold text-sm text-slate-900">Yeni Məhsul</p>
@@ -356,7 +384,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
               <button
                 onClick={() => onNavigate('Alış')}
-                className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 text-left transition group"
+                className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 text-left transition group cursor-pointer"
               >
                 <PackagePlus className="w-5 h-5 mb-2 text-indigo-600 group-hover:scale-110 transition-transform" />
                 <p className="font-bold text-sm text-slate-900">Anbara Alış</p>
@@ -365,7 +393,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
               <button
                 onClick={() => onNavigate('Maliyyə')}
-                className="p-4 rounded-xl border border-amber-100 bg-amber-50/50 hover:bg-amber-50 text-amber-700 text-left transition group"
+                className="p-4 rounded-xl border border-amber-100 bg-amber-50/50 hover:bg-amber-50 text-amber-700 text-left transition group cursor-pointer"
               >
                 <Coins className="w-5 h-5 mb-2 text-amber-600 group-hover:scale-110 transition-transform" />
                 <p className="font-bold text-sm text-slate-900">Xərc Qeydi</p>
@@ -374,7 +402,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
               <button
                 onClick={() => onNavigate('Borclar')}
-                className="p-4 rounded-xl border border-rose-100 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-left transition group"
+                className="p-4 rounded-xl border border-rose-100 bg-rose-50/50 hover:bg-rose-50 text-rose-700 text-left transition group cursor-pointer"
               >
                 <CreditCard className="w-5 h-5 mb-2 text-rose-600 group-hover:scale-110 transition-transform" />
                 <p className="font-bold text-sm text-slate-900">Borc Dəftəri</p>
@@ -389,7 +417,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
               <h2 className="font-bold text-slate-900 text-sm">Son Satışlar</h2>
               <button
                 onClick={() => onNavigate('Hesabatlar')}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700 cursor-pointer"
               >
                 Hesabat
               </button>
@@ -403,17 +431,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-800">
-                        {sale.items.length} çeşid məhsul
+                        {sale.items?.length || 0} çeşid məhsul
                         {sale.customerName && <span className="text-xs font-normal text-slate-500"> ({sale.customerName})</span>}
                       </p>
                       <p className="text-xs text-slate-400">
-                        {new Date(sale.date).toLocaleTimeString('az-AZ', { hour: '2-digit', minute: '2-digit' })} • {sale.paymentMethod}
+                        {sale.date ? new Date(sale.date).toLocaleTimeString('az-AZ', { hour: '2-digit', minute: '2-digit' }) : '—'} • {sale.paymentMethod || 'Nağd'}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-sm text-slate-900">
-                      {sale.total.toFixed(2)} {setting.currency}
+                      {fmt(sale.total)} {currencySymbol}
                     </p>
                     {sale.isReturned && (
                       <span className="text-[10px] text-rose-500 font-semibold uppercase">Qaytarılıb</span>

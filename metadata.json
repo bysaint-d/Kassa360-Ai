@@ -1,6 +1,6 @@
 {
   "name": "Calvotti Market",
-  "description": "Geyim və tekstil mağazası üçün tam funksional POS, anbar, maliyyə və 8 inteqrasiya edilmiş AI modulu.",
-  "requestFramePermissions": [],
+  "description": "Geyim və tekstil mağazası üçün tam funksional POS, anbar, maliyyə, Android mobil satıcı APK və real-vaxt mərkəzi sinxronizasiyası.",
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

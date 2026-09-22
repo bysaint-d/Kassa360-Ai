@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Kassa360 Satıcı</string>
+    <string name="title_activity_main">Kassa360 Satıcı</string>
+    <string name="package_name">az.kassa360.seller</string>
+    <string name="custom_url_scheme">az.kassa360.seller</string>
+</resources>

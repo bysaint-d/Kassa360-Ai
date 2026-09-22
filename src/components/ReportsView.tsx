@@ -45,6 +45,13 @@ import { ReceiptModal } from './ReceiptModal';
 import { getColorHex } from '../utils/calculations';
 import { AiAnalyticsDashboard } from './AiAnalyticsDashboard';
 
+const fmtMoney = (val: number | undefined | null, decimals = 2): string => {
+  if (val === undefined || val === null || isNaN(Number(val))) {
+    return (0).toFixed(decimals);
+  }
+  return Number(val).toFixed(decimals);
+};
+
 export const ReportsView: React.FC = () => {
   const {
     sales,
@@ -311,9 +318,9 @@ export const ReportsView: React.FC = () => {
             </div>
           </div>
           <h3 className="text-2xl font-extrabold text-slate-900 mt-2">
-            {summary.sales.toFixed(2)} {setting.currency}
+            {fmtMoney(summary?.sales)} {setting.currency}
           </h3>
-          <p className="text-xs text-slate-500 mt-1">{summary.count} ədəd kassa çeki</p>
+          <p className="text-xs text-slate-500 mt-1">{summary?.count ?? 0} ədəd kassa çeki</p>
         </div>
 
         {/* Cost of Goods Sold */}
@@ -325,9 +332,9 @@ export const ReportsView: React.FC = () => {
             </div>
           </div>
           <h3 className="text-2xl font-bold text-slate-900 mt-2">
-            {costOfGoods.toFixed(2)} {setting.currency}
+            {fmtMoney(costOfGoods)} {setting.currency}
           </h3>
-          <p className="text-xs text-slate-500 mt-1">{productsSold} ədəd məhsul satılıb</p>
+          <p className="text-xs text-slate-500 mt-1">{productsSold ?? 0} ədəd məhsul satılıb</p>
         </div>
 
         {/* Gross Profit */}
@@ -339,7 +346,7 @@ export const ReportsView: React.FC = () => {
             </div>
           </div>
           <h3 className="text-2xl font-extrabold text-emerald-600 mt-2">
-            +{summary.gross.toFixed(2)} {setting.currency}
+            +{fmtMoney(summary?.gross)} {setting.currency}
           </h3>
           <p className="text-xs text-slate-500 mt-1">Satış minus maya dəyəri</p>
         </div>
@@ -349,13 +356,13 @@ export const ReportsView: React.FC = () => {
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase">Xalis Mənfəət (Net)</span>
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-              summary.net >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+              (summary?.net ?? 0) >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
             }`}>
               <Coins className="w-4 h-4" />
             </div>
           </div>
-          <h3 className={`text-2xl font-extrabold mt-2 ${summary.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-            {summary.net >= 0 ? `+${summary.net.toFixed(2)}` : summary.net.toFixed(2)} {setting.currency}
+          <h3 className={`text-2xl font-extrabold mt-2 ${(summary?.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            {(summary?.net ?? 0) >= 0 ? `+${fmtMoney(summary?.net)}` : fmtMoney(summary?.net)} {setting.currency}
           </h3>
           <p className="text-xs text-slate-500 mt-1">Mənfəət minus xərclər</p>
         </div>
@@ -364,7 +371,7 @@ export const ReportsView: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
           <span className="text-xs font-semibold text-slate-500 uppercase">Dövrdəki Alışlar</span>
           <h3 className="text-xl font-bold text-slate-800 mt-2">
-            {purchasesTotal.toFixed(2)} {setting.currency}
+            {fmtMoney(purchasesTotal)} {setting.currency}
           </h3>
           <p className="text-xs text-slate-500 mt-1">Təchizatçılara ödənilən</p>
         </div>
@@ -373,7 +380,7 @@ export const ReportsView: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
           <span className="text-xs font-semibold text-slate-500 uppercase">Xərclər</span>
           <h3 className="text-xl font-bold text-rose-600 mt-2">
-            -{summary.expenses.toFixed(2)} {setting.currency}
+            -{fmtMoney(summary?.expenses)} {setting.currency}
           </h3>
           <p className="text-xs text-slate-500 mt-1">Kommunal, icarə, maaş və s.</p>
         </div>
@@ -558,27 +565,27 @@ export const ReportsView: React.FC = () => {
                       <div className="text-left md:text-right">
                         <div className="flex items-baseline gap-2">
                           <span className="text-base font-extrabold text-slate-900">
-                            {sale.total.toFixed(2)} {setting.currency}
+                            {fmtMoney(sale.total)} {setting.currency}
                           </span>
                           {!sale.isReturned && (
                             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                              +{saleProfit.toFixed(2)} {setting.currency} mənfəət
+                              +{fmtMoney(saleProfit)} {setting.currency} mənfəət
                             </span>
                           )}
                         </div>
-                        {sale.paymentMethod === 'Borc' && sale.paidAmount > 0 && (
+                        {sale.paymentMethod === 'Borc' && (sale.paidAmount || 0) > 0 && (
                           <p className="text-[11px] font-semibold text-emerald-700">
-                            Ödənilən: {sale.paidAmount.toFixed(2)} {setting.currency} {sale.partialPaymentMethod && `(${sale.partialPaymentMethod})`}
+                            Ödənilən: {fmtMoney(sale.paidAmount)} {setting.currency} {sale.partialPaymentMethod && `(${sale.partialPaymentMethod})`}
                           </p>
                         )}
-                        {sale.debtAmount > 0 && (
+                        {(sale.debtAmount || 0) > 0 && (
                           <p className="text-xs font-bold text-amber-600">
-                            Qalıq Borc: {sale.debtAmount.toFixed(2)} {setting.currency}
+                            Qalıq Borc: {fmtMoney(sale.debtAmount)} {setting.currency}
                           </p>
                         )}
-                        {sale.discount > 0 && (
+                        {(sale.discount || 0) > 0 && (
                           <p className="text-[11px] text-rose-500">
-                            Endirim: -{sale.discount.toFixed(2)} {setting.currency}
+                            Endirim: -{fmtMoney(sale.discount)} {setting.currency}
                           </p>
                         )}
                       </div>
@@ -653,27 +660,27 @@ export const ReportsView: React.FC = () => {
                                 <div className="col-span-2 text-right">
                                   {hasDiscount && item.originalPrice ? (
                                     <span className="line-through text-slate-400 block text-[10px]">
-                                      {item.originalPrice.toFixed(2)} {setting.currency}
+                                      {fmtMoney(item.originalPrice)} {setting.currency}
                                     </span>
                                   ) : null}
                                   <span className="font-medium text-slate-700">
-                                    {item.salePrice.toFixed(2)} {setting.currency}
+                                    {fmtMoney(item.salePrice)} {setting.currency}
                                   </span>
                                   {item.discountAmount && item.discountAmount > 0 ? (
                                     <span className="ml-1 text-[9px] font-extrabold text-rose-700 bg-rose-50 px-1 py-0.2 rounded border border-rose-200 inline-block">
-                                      -{item.discountAmount.toFixed(2)} {setting.currency}
+                                      -{fmtMoney(item.discountAmount)} {setting.currency}
                                     </span>
                                   ) : null}
                                 </div>
                                 <span className="col-span-1 text-right text-slate-400">
-                                  {item.costPrice.toFixed(2)}
+                                  {fmtMoney(item.costPrice)}
                                 </span>
                                 <div className="col-span-2 text-right">
                                   <span className="font-bold text-slate-900">
-                                    {item.total.toFixed(2)} {setting.currency}
+                                    {fmtMoney(item.total)} {setting.currency}
                                   </span>
                                   <p className="text-[10px] font-bold text-emerald-600">
-                                    +{item.profit.toFixed(2)} {setting.currency}
+                                    +{fmtMoney(item.profit)} {setting.currency}
                                   </p>
                                 </div>
                               </div>
@@ -738,7 +745,7 @@ export const ReportsView: React.FC = () => {
                   <div className="text-right">
                     <span className="font-bold text-sm text-blue-600">{item.quantity} ədəd</span>
                     <p className="text-xs text-slate-400">
-                      {item.amount.toFixed(2)} {setting.currency}
+                      {fmtMoney(item.amount)} {setting.currency}
                     </p>
                   </div>
                 </div>
@@ -773,7 +780,7 @@ export const ReportsView: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <span className="font-bold text-sm text-emerald-600">
-                      +{item.amount.toFixed(2)} {setting.currency}
+                      +{fmtMoney(item.amount)} {setting.currency}
                     </span>
                     <p className="text-xs text-slate-400">{item.quantity} ədəd satılıb</p>
                   </div>
